@@ -1,0 +1,49 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --blue: #1325c7;
+  --gray: #808080;
+  --white: white;
+}
+
+.container {
+  margin: 50px auto;
+  max-width: 750px;
+  border: 1px solid #808080;
+  display: grid;
+}
+
+.video {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1920 / 1080;
+  background: black;
+}
+
+.btn_wrapper {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 0;
+  border-top: 1px solid #808080;
+}
+
+.btn {
+  color: var(--blue);
+  background: var(--white);
+  padding: 6px 18px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  color: var(--gray);
+  border-color: var(--gray);
+}
