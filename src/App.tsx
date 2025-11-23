@@ -6,6 +6,34 @@ interface IIndicators {
   screen: boolean;
 }
 
+const createGrayscaleTransform = () =>
+  new TransformStream<VideoFrame, VideoFrame>({
+    async transform(frame, controller) {
+      const bitmap = await createImageBitmap(frame);
+
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(bitmap, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      const data = imageData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        data[i] = data[i + 1] = data[i + 2] = avg;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      const newFrame = new VideoFrame(canvas, {
+        timestamp: frame.timestamp,
+      });
+
+      frame.close();
+      controller.enqueue(newFrame);
+    },
+  });
+
 export const App: FC = () => {
   const video = useRef<HTMLVideoElement>(null);
   const [isRecord, setIsRecord] = useState(false);
@@ -62,8 +90,27 @@ export const App: FC = () => {
   };
 
   const toggleRecord = async () => {
-    if (isRecord) {
-      const mainStream = new MediaStream();
+    if (!isRecord) {
+      // 1. Сохраняем промежуточные переменные
+      const inputStream = video.current?.srcObject as MediaStream;
+      if (!inputStream) return;
+
+      const track = inputStream.getVideoTracks()[0];
+      if (!track) return;
+
+      // 2. Создаём processor и generator
+      const processor = new MediaStreamTrackProcessor({ track });
+      // @ts-ignore
+      const generator = new MediaStreamTrackGenerator({ kind: "video" });
+
+      // 3. TransformStream (ч/б фильтр)
+      const transformer = createGrayscaleTransform();
+
+      // 4. Соединяем pipeline
+      processor.readable.pipeThrough(transformer).pipeTo(generator.writable);
+      // 5. Создаём конечный поток
+      const mainStream = new MediaStream([generator]);
+
       // сохраняем в файл
       const fileHandle = await window
         .showSaveFilePicker({
