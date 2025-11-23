@@ -6,33 +6,76 @@ interface IIndicators {
   screen: boolean;
 }
 
-const createGrayscaleTransform = () =>
-  new TransformStream<VideoFrame, VideoFrame>({
-    async transform(frame, controller) {
-      const bitmap = await createImageBitmap(frame);
+function createCompositeTransform(inputTracks: MediaStreamTrack[]) {
+  const processors = inputTracks.map(
+    (track) => new MediaStreamTrackProcessor({ track })
+  );
 
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(bitmap, 0, 0);
+  const readers = processors.map((p) => p.readable.getReader());
 
-      const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-      const data = imageData.data;
+  // @ts-ignore
+  const generator = new MediaStreamTrackGenerator({ kind: "video" });
+  const writer = generator.writable.getWriter();
 
-      for (let i = 0; i < data.length; i += 4) {
-        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        data[i] = data[i + 1] = data[i + 2] = avg;
+  // создаём OffscreenCanvas для сборки видео
+  const width = 1280;
+  const height = 720;
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  // функция отрисовки одного кадра
+  async function renderFrames() {
+    while (true) {
+      // читаем все доступные кадры
+      const frames = await Promise.all(
+        readers.map((r) => r.read().catch(() => ({ done: true })))
+      );
+
+      // удаляем завершившиеся треки
+      const active = frames.filter((f) => !f.done);
+
+      if (active.length === 0) {
+        console.log("нет входящих кадров");
+        break;
       }
 
-      ctx.putImageData(imageData, 0, 0);
+      // очищаем канвас
+      ctx!.clearRect(0, 0, width, height);
 
-      const newFrame = new VideoFrame(canvas, {
-        timestamp: frame.timestamp,
+      if (active.length === 1) {
+        // один трек → рисуем на весь холст
+        const frame = active[0].value as VideoFrame;
+        ctx!.drawImage(frame, 0, 0, width, height);
+        frame.close();
+      }
+
+      if (active.length === 2) {
+        // двухкамерный режим
+        const frameA = active[0].value as VideoFrame;
+        const frameB = active[1].value as VideoFrame;
+
+        ctx!.drawImage(frameA, 0, 0, width / 2, height);
+        ctx!.drawImage(frameB, width / 2, 0, width / 2, height);
+
+        frameA.close();
+        frameB.close();
+      }
+
+      // создаём выходной кадр
+      const bitmap = canvas.transferToImageBitmap();
+      const outFrame = new VideoFrame(bitmap, {
+        timestamp: performance.now() * 1000,
       });
 
-      frame.close();
-      controller.enqueue(newFrame);
-    },
-  });
+      await writer.write(outFrame);
+      outFrame.close();
+    }
+  }
+
+  renderFrames();
+
+  return generator; // возвращаем генератор трека
+}
 
 export const App: FC = () => {
   const video = useRef<HTMLVideoElement>(null);
@@ -91,24 +134,12 @@ export const App: FC = () => {
 
   const toggleRecord = async () => {
     if (!isRecord) {
-      // 1. Сохраняем промежуточные переменные
-      const inputStream = video.current?.srcObject as MediaStream;
-      if (!inputStream) return;
+      const tracks = [];
 
-      const track = inputStream.getVideoTracks()[0];
-      if (!track) return;
+      if (camera.current) tracks.push(camera.current.getVideoTracks()[0]);
+      if (screen.current) tracks.push(screen.current.getVideoTracks()[0]);
 
-      // 2. Создаём processor и generator
-      const processor = new MediaStreamTrackProcessor({ track });
-      // @ts-ignore
-      const generator = new MediaStreamTrackGenerator({ kind: "video" });
-
-      // 3. TransformStream (ч/б фильтр)
-      const transformer = createGrayscaleTransform();
-
-      // 4. Соединяем pipeline
-      processor.readable.pipeThrough(transformer).pipeTo(generator.writable);
-      // 5. Создаём конечный поток
+      const generator = createCompositeTransform(tracks);
       const mainStream = new MediaStream([generator]);
 
       // сохраняем в файл
