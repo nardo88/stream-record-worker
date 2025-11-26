@@ -1,80 +1,10 @@
 import { useRef, useState, type FC } from "react";
 import "./App.css";
+import { StreamComposer } from "./streamComposer";
 
 interface IIndicators {
   camera: boolean;
   screen: boolean;
-}
-
-function createCompositeTransform(inputTracks: MediaStreamTrack[]) {
-  const processors = inputTracks.map(
-    (track) => new MediaStreamTrackProcessor({ track })
-  );
-
-  const readers = processors.map((p) => p.readable.getReader());
-
-  // @ts-ignore
-  const generator = new MediaStreamTrackGenerator({ kind: "video" });
-  const writer = generator.writable.getWriter();
-
-  // создаём OffscreenCanvas для сборки видео
-  const width = 1280;
-  const height = 720;
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-
-  // функция отрисовки одного кадра
-  async function renderFrames() {
-    while (true) {
-      // читаем все доступные кадры
-      const frames = await Promise.all(
-        readers.map((r) => r.read().catch(() => ({ done: true })))
-      );
-
-      // удаляем завершившиеся треки
-      const active = frames.filter((f) => !f.done);
-
-      if (active.length === 0) {
-        console.log("нет входящих кадров");
-        break;
-      }
-
-      // очищаем канвас
-      ctx!.clearRect(0, 0, width, height);
-
-      if (active.length === 1) {
-        // один трек → рисуем на весь холст
-        const frame = active[0].value as VideoFrame;
-        ctx!.drawImage(frame, 0, 0, width, height);
-        frame.close();
-      }
-
-      if (active.length === 2) {
-        // двухкамерный режим
-        const frameA = active[0].value as VideoFrame;
-        const frameB = active[1].value as VideoFrame;
-
-        ctx!.drawImage(frameA, 0, 0, width / 2, height);
-        ctx!.drawImage(frameB, width / 2, 0, width / 2, height);
-
-        frameA.close();
-        frameB.close();
-      }
-
-      // создаём выходной кадр
-      const bitmap = canvas.transferToImageBitmap();
-      const outFrame = new VideoFrame(bitmap, {
-        timestamp: performance.now() * 1000,
-      });
-
-      await writer.write(outFrame);
-      outFrame.close();
-    }
-  }
-
-  renderFrames();
-
-  return generator; // возвращаем генератор трека
 }
 
 export const App: FC = () => {
@@ -139,8 +69,9 @@ export const App: FC = () => {
       if (camera.current) tracks.push(camera.current.getVideoTracks()[0]);
       if (screen.current) tracks.push(screen.current.getVideoTracks()[0]);
 
-      const generator = createCompositeTransform(tracks);
-      const mainStream = new MediaStream([generator]);
+      const composer = new StreamComposer(tracks);
+      composer.start();
+      const mainStream = new MediaStream([composer.getGenerator()]);
 
       // сохраняем в файл
       const fileHandle = await window

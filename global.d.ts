@@ -51,11 +51,7 @@ declare class MediaStreamTrackProcessor<
   readonly readable: ReadableStream<T>;
 }
 
-// declare class MediaStreamTrackGenerator<
-//   T extends VideoFrame | AudioData = VideoFrame
-// > {
-//   constructor(options: { kind: "video" | "audio" });
-
-//   readonly writable: WritableStream<T>;
-//   readonly track: MediaStreamTrack;
-// }
+declare class MediaStreamTrackGenerator extends MediaStreamTrack {
+  constructor(init: { kind: "video" | "audio" });
+  writable: WritableStream<VideoFrame | AudioData>;
+}
