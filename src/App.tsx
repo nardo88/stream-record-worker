@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FC } from 'react'
 import './App.css'
-import { StreamComposer } from './streamComposer'
+import { Composer } from './composer/composer'
 
 interface IIndicators {
   camera: boolean
@@ -19,7 +19,7 @@ export const App: FC = () => {
   const screen = useRef<MediaStream>(null)
   const camera = useRef<MediaStream>(null)
   const ws = useRef<FileSystemWritableFileStream>(null)
-  const composer = useRef<StreamComposer | null>(null)
+  const composer = useRef<Composer | null>(null)
 
   const toggleScreen = () => {
     if (!screen.current) {
@@ -70,17 +70,15 @@ export const App: FC = () => {
       if (camera.current) tracks.push(camera.current.getVideoTracks()[0])
       if (screen.current) tracks.push(screen.current.getVideoTracks()[0])
 
-      composer.current = new StreamComposer(tracks)
-      composer.current.start()
+      composer.current = new Composer(tracks)
+      await composer.current.startRecord()
       const mainStream = new MediaStream([composer.current.getGenerator()])
 
       // сохраняем в файл
       const fileHandle = await window
         .showSaveFilePicker({
           suggestedName: 'recording.webm',
-          types: [
-            { description: 'WebM Video', accept: { 'video/webm': ['.webm'] } },
-          ],
+          types: [{ description: 'WebM Video', accept: { 'video/webm': ['.webm'] } }],
         })
         .catch(() => console.log('отменен'))
 
@@ -108,6 +106,7 @@ export const App: FC = () => {
       setIsRecord(false)
       record?.stop()
       setRecord(null)
+      composer.current!.stopRecord()
     }
   }
 
