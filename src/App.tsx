@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FC } from 'react'
 import './App.css'
-import { Composer } from './composer/composer'
+import { StreamComposer } from './streamComposer'
 
 interface IIndicators {
   camera: boolean
@@ -19,7 +19,7 @@ export const App: FC = () => {
   const screen = useRef<MediaStream>(null)
   const camera = useRef<MediaStream>(null)
   const ws = useRef<FileSystemWritableFileStream>(null)
-  const composer = useRef<Composer | null>(null)
+  const composer = useRef<StreamComposer | null>(null)
 
   const toggleScreen = () => {
     if (!screen.current) {
@@ -70,8 +70,8 @@ export const App: FC = () => {
       if (camera.current) tracks.push(camera.current.getVideoTracks()[0])
       if (screen.current) tracks.push(screen.current.getVideoTracks()[0])
 
-      composer.current = new Composer(tracks)
-      await composer.current.startRecord()
+      composer.current = new StreamComposer(tracks)
+      composer.current.start()
       const mainStream = new MediaStream([composer.current.getGenerator()])
 
       // сохраняем в файл
@@ -106,7 +106,7 @@ export const App: FC = () => {
       setIsRecord(false)
       record?.stop()
       setRecord(null)
-      composer.current!.stopRecord()
+      composer.current!.destroy()
     }
   }
 

@@ -14,6 +14,8 @@ export class StreamComposer {
   // processor
   processors: MediaStreamTrackProcessor<VideoFrame>[]
   readers: ReadableStreamDefaultReader<VideoFrame>[]
+  // state
+  isActive: boolean
 
   constructor(tracks: MediaStreamTrack[]) {
     this.tracks = tracks
@@ -25,10 +27,10 @@ export class StreamComposer {
     if (!ctx) throw new Error('2D context is not available')
     this.ctx = ctx
     // processor
-    this.processors = tracks.map(
-      (track) => new MediaStreamTrackProcessor({ track })
-    )
+    this.processors = tracks.map((track) => new MediaStreamTrackProcessor({ track }))
     this.readers = this.processors.map((p) => p.readable.getReader())
+    // state
+    this.isActive = false
   }
 
   getGenerator() {
@@ -36,16 +38,14 @@ export class StreamComposer {
   }
 
   async renderFrames() {
-    while (true) {
+    while (this.isActive) {
       // читаем все доступные кадры
       const frames = await Promise.all(
         this.readers.map((r) => r.read().catch(() => ({ done: true })))
       )
 
       // удаляем завершившиеся треки
-      const active = frames.filter(
-        (f) => !f.done
-      ) as ReadableStreamReadResult<VideoFrame>[]
+      const active = frames.filter((f) => !f.done) as ReadableStreamReadResult<VideoFrame>[]
 
       if (active.length === 0) {
         console.log('нет входящих кадров')
@@ -76,24 +76,28 @@ export class StreamComposer {
 
       // создаём выходной кадр
       const bitmap = this.canvas.transferToImageBitmap()
-      const outFrame = new VideoFrame(bitmap, {
-        timestamp: performance.now() * 1000,
-      })
+      const outFrame = new VideoFrame(bitmap, { timestamp: performance.now() * 1000 })
 
       await this.writer.write(outFrame)
       outFrame.close()
     }
   }
 
+  destroy() {
+    this.isActive = false
+    this.writer.close()
+    this.generator.stop()
+    this.readers.forEach((i) => i.cancel())
+  }
+
   start() {
+    this.isActive = true
     this.renderFrames()
   }
 
   changeTracks(tracks: MediaStreamTrack[]) {
     this.tracks = tracks
-    this.processors = tracks.map(
-      (track) => new MediaStreamTrackProcessor({ track })
-    )
+    this.processors = tracks.map((track) => new MediaStreamTrackProcessor({ track }))
     this.readers = this.processors.map((p) => p.readable.getReader())
   }
 }
